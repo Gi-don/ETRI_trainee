@@ -1,0 +1,77 @@
+# %%
+import pandas as pd
+import numpy as np
+
+# %%
+Renewable_Energy = "Solar_PBE" # Solar_PBE / Wind_Wallonie_Elia
+
+data_train_csv1 = pd.read_csv(Renewable_Energy+'_16.csv', index_col=0)
+data_train_csv2 = pd.read_csv(Renewable_Energy+'_17.csv', index_col=0)
+data_train_csv  = pd.concat([data_train_csv1, data_train_csv2])
+data_val_csv    = pd.read_csv(Renewable_Energy+'_18.csv', index_col=0)
+data_test_csv   = pd.read_csv(Renewable_Energy+'_19.csv', index_col=0)
+
+# %%
+# Data Preprocessing
+
+unit = 4 #unit: 15 minute
+
+RE_Capacity1 = max(data_train_csv['Power(MW)'])
+RE_Capacity2 = max(data_val_csv['Power(MW)'])
+RE_Capacity3 = max(data_test_csv['Power(MW)'])
+
+size_train0 = int(len(data_train_csv)/unit)
+size_val0   = int(len(data_val_csv)/unit)
+size_test0  = int(len(data_test_csv)/unit)
+
+data_train0 = []
+data_train  = []
+for i in range(size_train0):
+    data_train0 += [round(pd.Series.mean(data_train_csv['Power(MW)'][i*unit:(i+1)*unit])/RE_Capacity1, 3)]
+    data_train  += [data_train0[i]] if data_train0[i] > 0 else []
+
+data_val0 = []
+data_val  = []
+for i in range(size_val0):
+    data_val0 += [round(pd.Series.mean(data_val_csv['Power(MW)'][i*unit:(i+1)*unit])/RE_Capacity2, 3)]
+    data_val  += [data_val0[i]] if data_val0[i] > 0 else []
+
+data_test0 = []
+data_test  = []
+for i in range(size_test0):
+    data_test0 += [round(pd.Series.mean(data_test_csv['Power(MW)'][i*unit:(i+1)*unit])/RE_Capacity3, 3)]
+    data_test  += [data_test0[i]] if data_test0[i] > 0 else []
+
+# %%
+# AutoRegressive (AR)
+
+past = 5 # 15~20 
+
+size_train = len(data_train)
+size_val   = len(data_val)
+size_test  = len(data_test)
+
+train_input = np.zeros((size_train-past, past))
+train_output = np.zeros((size_train-past, 1))
+for i in range(size_train-past):
+    train_input[i,:] = np.reshape(data_train[i:i+past], (past))
+    train_output[i,:] = data_train[i+past]
+
+val_input = np.zeros((size_val-past, past))
+val_output = np.zeros((size_val-past, 1))
+for i in range(size_val-past):
+    val_input[i,:] = np.reshape(data_val[i:i+past], (past))
+    val_output[i,:] = data_val[i+past]
+
+test_input = np.zeros((size_test-past, past))
+test_output = np.zeros((size_test-past, 1))
+for i in range(size_test-past):
+    test_input[i,:] = np.reshape(data_test[i:i+past], (past))
+    test_output[i,:] = data_test[i+past]
+
+weight = np.matmul(np.linalg.pinv(train_input), train_output)
+val_predict  = np.matmul(val_input, weight)
+test_predict = np.matmul(test_input, weight)
+MAE_val  = np.mean(np.abs(val_predict - val_output))
+MAE_test = np.mean(np.abs(test_predict - test_output))
+print("MAE_val: {}%, MAE_test: {}%".format(round(100*MAE_val,2),round(100*MAE_test,2)))
